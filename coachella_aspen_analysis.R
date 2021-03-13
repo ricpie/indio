@@ -4,6 +4,13 @@ graphics.off()
 # Import data, perform QAQC check.  If email == 1, send an email out.
 #Set directory with this file as the working directory.
 setwd("~/Dropbox/Coachella Source Apportionment PHI/Analysis")
+dir.create("tester",showWarnings = F)
+dir.create("odk data",showWarnings = F)  #Put odk data downloads into here.
+dir.create("plots",showWarnings = F)
+dir.create("processed data",showWarnings = F)
+dir.create("QA Reports",showWarnings = F)
+dir.create("results",showWarnings = F)
+
 
 #Keys: instrument_id, location, size
 
@@ -148,22 +155,4 @@ setdiff(aspen_header_merged1$FilterID,aspen_header_merged$FilterID)
 filename = paste0("~/Dropbox/Coachella Field/Data/QA Reports/Indio_QA_Report_",  Sys.Date(), ".xlsx")
 write.xlsx(list(complete_list = aspen_header_merged1,clean_list = aspen_header_merged),file = filename)
 
-
-if(email==1){
-  sender <- "beaconnih@gmail.com"
-  recipients <- c("rpiedrahita@berkeleyair.com","mrossanese@berkeleyair.com","christian@ccvhealth.org","edgar@ccvhealth.org")
-  # recipients <- c("rpiedrahita@berkeleyair.com")
-  send.mail(from = sender,
-            to = recipients,
-            subject = paste0("Indio Ambient Sampling QA Report ",as.character(Sys.Date())),
-            body = "Attached is a summary of the samples to date.  Pleae check the flags at the end of the excel file that indicate problems with the
-            sample duration, Filter ID, and volume flow rate.  If there are any entries missing (due to mismatches in filter ID naming, or not yet having done data entry(
-            for the columns showing data from the files or from the Excel sheet, it will show up as empty data.",
-            smtp = list(host.name = "smtp.gmail.com", port = 465, 
-                        user.name = "beaconnih@gmail.com",            
-                        passwd = "CookaBLE99", ssl = TRUE),
-            authenticate = TRUE,
-            attach.files = filename,
-            send = TRUE)
-}
 
