@@ -155,4 +155,6 @@ setdiff(aspen_header_merged1$FilterID,aspen_header_merged$FilterID)
 filename = paste0("~/Dropbox/Coachella Field/Data/QA Reports/Indio_QA_Report_",  Sys.Date(), ".xlsx")
 write.xlsx(list(complete_list = aspen_header_merged1,clean_list = aspen_header_merged),file = filename)
 
+source('r_scripts/emailfun.R')
+emailfun(email,filename)
 
