@@ -3,13 +3,13 @@ graphics.off()
 ## Analyze Coachella ASPEN data
 # Import data, perform QAQC check.  If email == 1, send an email out.
 #Set directory with this file as the working directory.
-setwd("~/Dropbox/Coachella Source Apportionment PHI/Analysis")
-dir.create("tester",showWarnings = F)
-dir.create("odk data",showWarnings = F)  #Put odk data downloads into here.
-dir.create("plots",showWarnings = F)
-dir.create("processed data",showWarnings = F)
-dir.create("QA Reports",showWarnings = F)
-dir.create("results",showWarnings = F)
+# Saving all output to the shared field folder.  Code remains separate/isolated.
+dir.create("~/Dropbox/Coachella Field/Data/processing/tester",showWarnings = F)
+dir.create("~/Dropbox/Coachella Field/Data/processing/odk data",showWarnings = F)  #Put odk data downloads into here.
+dir.create("~/Dropbox/Coachella Field/Data/processing/plots",showWarnings = F)
+dir.create("~/Dropbox/Coachella Field/Data/processing/processed data",showWarnings = F)
+dir.create("~/Dropbox/Coachella Field/Data/processing/QA Reports",showWarnings = F)
+dir.create("~/Dropbox/Coachella Field/Data/processing/results",showWarnings = F)
 
 
 #Keys: instrument_id, location, size
