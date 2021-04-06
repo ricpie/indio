@@ -305,7 +305,7 @@ tseries25 <- dataLong %>%
   ggplot(aes(x=SampleDate,y=value))+ 
   geom_smooth(alpha = 0.25) + 
   geom_point(alpha = 0.25) +
-  facet_wrap(name ~ .) +
+  facet_wrap(name ~ .,scales="free_y") +
   labs(y=expression("µg/m^3"),x="") + 
   ggtitle("Indio PM2.5 species concentration time series") + 
   # theme_minimal() +
@@ -320,13 +320,13 @@ tseries10 <- dataLong %>%
   ggplot(aes(x=SampleDate,y=value))+ 
   geom_smooth(alpha = 0.25) + 
   geom_point(alpha = 0.25) +
-  facet_wrap(name ~ .) +
+  facet_wrap(name ~ .,scales="free_y") +
   labs(y=expression("µg/m^3"),x="") + 
   ggtitle("Indio PM10 species concentration time series") + 
   # theme_minimal() +
   theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
   theme(legend.title = element_blank())
-tseries25
+tseries10
 
 ```
 
@@ -340,14 +340,14 @@ dataConcWide25 = dataLong %>%
   pivot_wider(values_from = value) %>% 
   dplyr::filter(!FilterSizeType %like% "10") %>% 
   dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3"))
-write.csv(dataConcWide25,"pmf formatted data/conc_pm25.csv")
+write.csv(dataConcWide25,"pmf_formatted_data/conc_pm25.csv")
 
 dataConcWide10 = dataLong %>% 
   dplyr::filter(!name %like% "unc") %>% 
   pivot_wider(values_from = value) %>% 
   dplyr::filter(FilterSizeType %like% "10") %>% 
   dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3"))
-write.csv(dataConcWide10,"pmf formatted data/conc_pm10.csv")
+write.csv(dataConcWide10,"pmf_formatted_data/conc_pm10.csv")
 
 
 dataUncWide25 = dataLong %>% 
@@ -355,7 +355,7 @@ dataUncWide25 = dataLong %>%
   pivot_wider(values_from = value) %>% 
   dplyr::filter(!FilterSizeType %like% "10") %>% 
   dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3")) 
-write.csv(dataUncWide25,"pmf formatted data/unc_pm25.csv")
+write.csv(dataUncWide25,"pmf_formatted_data/unc_pm25.csv")
 
 
 dataUncWide10 = dataLong %>% 
@@ -363,7 +363,7 @@ dataUncWide10 = dataLong %>%
   pivot_wider(values_from = value) %>% 
   dplyr::filter(FilterSizeType %like% "10") %>% 
   dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3"))
-write.csv(dataUncWide10,"pmf formatted data/unc_pm10.csv")
+write.csv(dataUncWide10,"pmf_formatted_data/unc_pm10.csv")
 
 ```
 
