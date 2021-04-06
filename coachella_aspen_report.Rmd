@@ -1,6 +1,7 @@
 ---
 title: "coachella_aspen"
 author: "ricardo_piedrahita"
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = paste0(substr(inputFile,1,nchar(inputFile)-4),Sys.Date(),'.html')) })
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
   html_document:
