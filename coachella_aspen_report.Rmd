@@ -1,7 +1,7 @@
 ---
 title: "coachella_aspen"
 author: "ricardo_piedrahita"
-knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = paste0(substr(inputFile,1,nchar(inputFile)-4),Sys.Date(),'.html')) })
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = paste0(substr(inputFile,1,nchar(inputFile)-4),Sys.Date(),'.html'))})
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
   html_document:
@@ -74,6 +74,14 @@ field_log = readxl::read_xlsx(list.files(path = "~/Dropbox/Coachella Field/Data"
   dplyr::rename_all(function(x) paste0("excel_", x)) %>% 
   dplyr::mutate(CartridgeID = toupper(excel_Filter_ID),
                 excel_Comments = toupper(excel_Comments))
+
+# Summary of samples collected.  Maybe add an explicit flag for removing data with less than 48h runtime?
+DT::datatable((field_log %>% 
+        dplyr::filter(!grepl("blank",excel_Comments,ignore.case = T),
+                      is.na(`excel_Quartz Blank ID`)) %>% 
+        dplyr::group_by(excel_Type) %>% 
+        dplyr::summarise(count = n()),
+      caption = "Samples collected excluding blanks")
 
 
 #Import list of filters assembled in Colorado
