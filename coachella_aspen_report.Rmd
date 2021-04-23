@@ -76,7 +76,7 @@ field_log = readxl::read_xlsx(list.files(path = "~/Dropbox/Coachella Field/Data"
                 excel_Comments = toupper(excel_Comments))
 
 # Summary of samples collected.  Maybe add an explicit flag for removing data with less than 48h runtime?
-DT::datatable((field_log %>% 
+DT::datatable(field_log %>% 
         dplyr::filter(!grepl("blank",excel_Comments,ignore.case = T),
                       is.na(`excel_Quartz Blank ID`)) %>% 
         dplyr::group_by(excel_Type) %>% 
@@ -227,8 +227,17 @@ dataECOC = read_xlsx("~/Dropbox/Coachella Source Apportionment PHI/Data/FilterRe
   rename_with(., ~ gsub(" ","",.x)) %>% 
   rename_with(., ~ gsub("[[:punct:]]","",.x)) %>% 
   dplyr::select(SampleDate,FilterSizeType,
-                OCugm3,OCuncugm3,ECugm3,ECuncugm3) %>% 
+                OCconcugm3,OCuncugm3,ECconcugm3,ECuncugm3) %>% 
   dplyr::filter(!is.na(SampleDate))
+
+
+dataOrganics = read_xlsx("~/Dropbox/Coachella Source Apportionment PHI/Data/FilterResultsCombined_MR.xlsx",
+                     sheet = "Organics_Results",skip = 3) %>% 
+  rename_with(., ~ gsub(" ","",.x)) %>% 
+  rename_with(., ~ gsub("[[:punct:]]","",.x)) %>% 
+  dplyr::select(SampleDate,FilterSizeType,ends_with("conc"),ends_with("unc")) %>% 
+  dplyr::filter(!is.na(SampleDate))
+
 
 
 dataXRF = read_xlsx("~/Dropbox/Coachella Source Apportionment PHI/Data/FilterResultsCombined_MR.xlsx",
