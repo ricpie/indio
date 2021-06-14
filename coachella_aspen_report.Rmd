@@ -106,7 +106,7 @@ aspen_data = rbindlist(lapply(aspen_files,read_aspen))
 aspen_files[sapply(aspen_files, file.size) > 10000]
 
 
-aspen_header <- rbindlist(lapply(aspen_files,read_aspen_header)) %>% 
+aspen_header <- rbindlist(lapply(aspen_files,read_aspen_header),fill=TRUE) %>% 
   as.data.frame() %>% 
   dplyr::rename(Filter1ID = CIDfilter1,
                 Filter2ID = CIDfilter2) %>% 
