@@ -77,11 +77,11 @@ field_log = readxl::read_xlsx(list.files(path = "~/Dropbox/Coachella Field/Data"
 
 # Summary of samples collected.  Maybe add an explicit flag for removing data with less than 48h runtime?
 DT::datatable(field_log %>% 
-        dplyr::filter(!grepl("blank",excel_Comments,ignore.case = T),
-                      is.na(`excel_Quartz Blank ID`)) %>% 
-        dplyr::group_by(excel_Type) %>% 
-        dplyr::summarise(count = n()),
-      caption = "Samples collected excluding blanks")
+                dplyr::filter(!grepl("blank",excel_Comments,ignore.case = T),
+                              is.na(`excel_Quartz Blank ID`)) %>% 
+                dplyr::group_by(excel_Type) %>% 
+                dplyr::summarise(count = n()),
+              caption = "Samples collected excluding blanks")
 
 
 #Import list of filters assembled in Colorado
@@ -232,7 +232,7 @@ dataECOC = read_xlsx("~/Dropbox/Coachella Source Apportionment PHI/Data/FilterRe
 
 
 dataOrganics = read_xlsx("~/Dropbox/Coachella Source Apportionment PHI/Data/FilterResultsCombined_MR.xlsx",
-                     sheet = "Organics_Results",skip = 3) %>% 
+                         sheet = "Organics_Results",skip = 3) %>% 
   rename_with(., ~ gsub(" ","",.x)) %>% 
   rename_with(., ~ gsub("[[:punct:]]","",.x)) %>% 
   dplyr::select(SampleDate,FilterSizeType,ends_with("conc"),ends_with("unc")) %>% 
@@ -355,31 +355,35 @@ tseries10
 
 dataConcWide25 = dataLong %>% 
   dplyr::filter(!name %like% "unc") %>% 
-  pivot_wider(values_from = value) %>% 
+  dplyr::distinct()   %>% 
   dplyr::filter(!FilterSizeType %like% "10") %>% 
+  pivot_wider(values_from = value,names_from = c("name")) %>% 
   dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3"))
 write.csv(dataConcWide25,"pmf_formatted_data/conc_pm25.csv")
 
 dataConcWide10 = dataLong %>% 
   dplyr::filter(!name %like% "unc") %>% 
-  pivot_wider(values_from = value) %>% 
+  dplyr::distinct()   %>% 
   dplyr::filter(FilterSizeType %like% "10") %>% 
+  pivot_wider(values_from = value) %>% 
   dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3"))
 write.csv(dataConcWide10,"pmf_formatted_data/conc_pm10.csv")
 
 
 dataUncWide25 = dataLong %>% 
   dplyr::filter(name %like% "unc") %>% 
-  pivot_wider(values_from = value) %>% 
+  dplyr::distinct()   %>% 
   dplyr::filter(!FilterSizeType %like% "10") %>% 
+  pivot_wider(values_from = value) %>% 
   dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3")) 
 write.csv(dataUncWide25,"pmf_formatted_data/unc_pm25.csv")
 
 
 dataUncWide10 = dataLong %>% 
   dplyr::filter(name %like% "unc") %>% 
-  pivot_wider(values_from = value) %>% 
+  dplyr::filter(!FilterSizeType %like% "10") %>% 
   dplyr::filter(FilterSizeType %like% "10") %>% 
+  pivot_wider(values_from = value) %>% 
   dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3"))
 write.csv(dataUncWide10,"pmf_formatted_data/unc_pm10.csv")
 
