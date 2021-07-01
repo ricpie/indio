@@ -101,7 +101,7 @@ DT::datatable(filter_list,caption="Complete list of filters used in study")
 
 #Import ASPEN data
 aspen_files = list.files(path = "~/Dropbox/Coachella Field/Data/Field Data Collected",pattern = 'ASPEN00', recursive = T, full.names = T)
-aspen_data = rbindlist(lapply(aspen_files,read_aspen)) 
+aspen_data = rbindlist(lapply(aspen_files,read_aspen),fill=TRUE) 
 
 aspen_files[sapply(aspen_files, file.size) > 10000]
 
@@ -169,11 +169,13 @@ aspen_header_merged_temp = dplyr::full_join(aspen_header,field_log,by = c("Cartr
   ) 
 
 aspen_header_merged1 <- dplyr::left_join(aspen_header_merged_temp,filter_list, by="CartridgeID") %>% 
-  dplyr::mutate(excel_sent_datediff = as.Date(DateSent)-as.Date(excel_datetime_start), #This should be negative for all.  And then keep the nearest or NA
+  #This should be negative for all.  And then keep the nearest or NA.  Date sent it TO Cali.
+  dplyr::mutate(excel_sent_datediff = as.Date(DateSent)-as.Date(excel_datetime_start), 
                 sampletype = case_when(excel_Comments %like% "BLANK" ~ "blank",
                                        TRUE ~ "ambient")) %>%
   dplyr::filter(is.na(file_start_date) | #Keep NA file start dates since some files were not saved.
                   (file_SampledRuntime>2 | sampletype %like% "blank"))  %>% #Runs less than 1 hour are from tests.
+  #This is difference between excel's start date, and the file's.  Should be 0.
   dplyr::mutate(excel_file_datediff = as.Date(excel_datetime_start) - as.Date(file_start_date)) %>% #Should be negative, and nearest!
   dplyr::arrange(CartridgeID,desc(sampletype),file_start_date,excel_file_datediff) %>% 
   dplyr::mutate(R_notes = case_when(excel_sent_datediff>0 ~ "Ensure that the Excel file is up to date, and not merging with another row on Cartridge ID incorrectly.",
@@ -182,8 +184,14 @@ aspen_header_merged1 <- dplyr::left_join(aspen_header_merged_temp,filter_list, b
 
 
 aspen_header_merged <- aspen_header_merged1 %>% 
+  #Keep only the filters that were used after they were mailed to Cali.
   dplyr::filter(excel_sent_datediff < 0,
                 (is.na(excel_file_datediff) | sampletype %like% "blank" | abs(excel_file_datediff) < 2))  %>% #Set to 2 to give some leeway in bad data entry.
+  dplyr::group_by(CartridgeID,file_start_date) %>% 
+  dplyr::arrange(desc(excel_sent_datediff)) %>% 
+  # Keep the nearest matched cartridge used on a given day
+  dplyr::filter(1 ==  row_number()) %>% 
+  #Keep the nearest filter used of the merged cartridge/used-on dates.
   dplyr::group_by(FilterID) %>% 
   dplyr::arrange(desc(excel_sent_datediff)) %>% 
   dplyr::mutate(row_number = row_number()) %>% 
@@ -208,184 +216,3 @@ if(email == 1){
 
 
 ```
-
-# Import the analyzed data sets for plotting/analysis
-
-```{r import_processed, include=TRUE,echo=TRUE}
-
-dataGrav = read_xlsx("~/Dropbox/Coachella Source Apportionment PHI/Data/FilterResultsCombined_MR.xlsx",
-                     sheet = "Weights_Results",skip = 1) %>% 
-  rename_with(., ~ gsub(" ","",.x)) %>% 
-  rename_with(., ~ gsub("[[:punct:]]","",.x)) %>% 
-  rename("samplevolm3"="Correctedsamplevolumeweightaccountsformissingfiles") %>% 
-  dplyr::select(SampleDate,FilterSizeType,SampleType,SampleDurationweight,ErrorNotes,samplevolm3,
-                Gravugm3,Gravuncugm3) %>% 
-  dplyr::filter(!is.na(Gravugm3))
-
-dataECOC = read_xlsx("~/Dropbox/Coachella Source Apportionment PHI/Data/FilterResultsCombined_MR.xlsx",
-                     sheet = "ECOC_Results",skip = 5) %>% 
-  rename_with(., ~ gsub(" ","",.x)) %>% 
-  rename_with(., ~ gsub("[[:punct:]]","",.x)) %>% 
-  dplyr::select(SampleDate,FilterSizeType,
-                OCconcugm3,OCuncugm3,ECconcugm3,ECuncugm3) %>% 
-  dplyr::filter(!is.na(SampleDate))
-
-
-dataOrganics = read_xlsx("~/Dropbox/Coachella Source Apportionment PHI/Data/FilterResultsCombined_MR.xlsx",
-                         sheet = "Organics_Results",skip = 3) %>% 
-  rename_with(., ~ gsub(" ","",.x)) %>% 
-  rename_with(., ~ gsub("[[:punct:]]","",.x)) %>% 
-  dplyr::select(SampleDate,FilterSizeType,ends_with("conc"),ends_with("unc")) %>% 
-  dplyr::filter(!is.na(SampleDate))
-
-
-
-dataXRF = read_xlsx("~/Dropbox/Coachella Source Apportionment PHI/Data/FilterResultsCombined_MR.xlsx",
-                    sheet = "XRF_Results",skip = 3,) %>% 
-  rename_with(., ~ gsub(" ","",.x)) %>% 
-  rename_with(., ~ gsub("/","",.x)) %>%
-  rename_with(., ~ gsub("_","",.x)) %>%
-  dplyr::select(-starts_with("ugcm"),-"Correctedsamplevolumexrf(accountsformissingfiles)",-"SampleVolumexrf(m^3)",
-                -"Blanksubtractedmassxrf(µg)",-"Sampledurationxrf(hours)",-ErrorNotes,
-                -"BlankMass(µg)",-Element,-Detectionlimit,-FilterType,-FilterID,-SampleType,
-                -ends_with("ugcm2")) %>% 
-  dplyr::filter(!is.na(SampleDate)) %>% 
-  dplyr::mutate(FilterSizeType = as.factor(FilterSizeType)) %>% 
-  dplyr::mutate_each(funs(if(is.character(.)) as.numeric(.) else .))
-
-
-dataAll = dataGrav  %>% 
-  left_join(dataECOC, by = c("SampleDate","FilterSizeType")) %>% 
-  left_join(dataXRF, by = c("SampleDate","FilterSizeType"))
-
-```
-
-
-# Plot up processed data
-```{r plots_processed, include=TRUE,echo=TRUE}
-
-dataLong = dataAll %>% 
-  pivot_longer(cols = c(Gravugm3:Pbuncugm3)) %>% 
-  dplyr::filter(!is.na(value))
-
-
-give.n <- function(x){return(c(y = 0, label = length(x)))}
-give.meanlog <- function(x){return(c(y =mean(x)+.1, label = round(10^(mean(x)),digits=2)))}
-
-#To make box and whiskers quantiles rather than IQRs.
-f <- function(x) {
-  r <- quantile(x, probs = c(0.05, 0.25, 0.5, 0.75, 0.95))
-  names(r) <- c("ymin", "lower", "middle", "upper", "ymax")
-  r
-}
-
-distributions25 <- dataLong %>% 
-  dplyr::filter(!name %like% "unc") %>% 
-  dplyr::filter(!FilterSizeType %like% "10") %>% 
-  ggplot(aes(x=name,y=value)) + 
-  stat_summary(fun.data = f, geom="boxplot") +  
-  stat_summary(fun=mean, colour="blue", geom="point", 
-               shape=18, size=3,alpha = 0.8) +
-  stat_summary(fun.data = give.meanlog, geom = "text",colour="blue",size=4) +
-  geom_jitter(height = 0,width = 0.4,alpha = 0.05) +
-  stat_summary(fun.data = give.n, geom = "text") +
-  facet_grid(FilterSizeType ~ .) +
-  labs(y=expression("µg/m^3"),x="") + 
-  ggtitle("Species concentration distributions") + 
-  # theme_minimal() +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
-  theme(legend.title = element_blank()) +
-  scale_y_log10() 
-distributions25
-
-distributions10 <- dataLong %>% 
-  dplyr::filter(!name %like% "unc") %>% 
-  dplyr::filter(FilterSizeType %like% "10") %>% 
-  ggplot(aes(x=name,y=value))+ 
-  stat_summary(fun.data = f, geom="boxplot") +  
-  stat_summary(fun=mean, colour="blue", geom="point", 
-               shape=18, size=3,alpha = 0.8) +
-  stat_summary(fun.data = give.meanlog, geom = "text",colour="blue",size=4) +
-  geom_jitter(height = 0,width = 0.4,alpha = 0.05) +
-  stat_summary(fun.data = give.n, geom = "text") +
-  facet_grid(FilterSizeType ~ .) +
-  labs(y=expression("µg/m^3"),x="") + 
-  ggtitle("Species concentration distributions") + 
-  # theme_minimal() +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
-  theme(legend.title = element_blank()) +
-  scale_y_log10() 
-distributions10
-
-tseries25 <- dataLong %>% 
-  dplyr::filter(!name %like% "unc") %>% 
-  dplyr::filter(!FilterSizeType %like% "10") %>% 
-  ggplot(aes(x=SampleDate,y=value))+ 
-  geom_smooth(alpha = 0.25) + 
-  geom_point(alpha = 0.25) +
-  facet_wrap(name ~ .,scales="free_y") +
-  labs(y=expression("µg/m^3"),x="") + 
-  ggtitle("Indio PM2.5 species concentration time series") + 
-  # theme_minimal() +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
-  theme(legend.title = element_blank())
-tseries25
-
-
-tseries10 <- dataLong %>% 
-  dplyr::filter(!name %like% "unc") %>% 
-  dplyr::filter(FilterSizeType %like% "10") %>% 
-  ggplot(aes(x=SampleDate,y=value))+ 
-  geom_smooth(alpha = 0.25) + 
-  geom_point(alpha = 0.25) +
-  facet_wrap(name ~ .,scales="free_y") +
-  labs(y=expression("µg/m^3"),x="") + 
-  ggtitle("Indio PM10 species concentration time series") + 
-  # theme_minimal() +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
-  theme(legend.title = element_blank())
-tseries10
-
-```
-
-
-
-# Save processed data in PMF format
-```{r save_processed, include=TRUE,echo=TRUE}
-
-dataConcWide25 = dataLong %>% 
-  dplyr::filter(!name %like% "unc") %>% 
-  dplyr::distinct()   %>% 
-  dplyr::filter(!FilterSizeType %like% "10") %>% 
-  pivot_wider(values_from = value,names_from = c("name")) %>% 
-  dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3"))
-write.csv(dataConcWide25,"pmf_formatted_data/conc_pm25.csv")
-
-dataConcWide10 = dataLong %>% 
-  dplyr::filter(!name %like% "unc") %>% 
-  dplyr::distinct()   %>% 
-  dplyr::filter(FilterSizeType %like% "10") %>% 
-  pivot_wider(values_from = value) %>% 
-  dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3"))
-write.csv(dataConcWide10,"pmf_formatted_data/conc_pm10.csv")
-
-
-dataUncWide25 = dataLong %>% 
-  dplyr::filter(name %like% "unc") %>% 
-  dplyr::distinct()   %>% 
-  dplyr::filter(!FilterSizeType %like% "10") %>% 
-  pivot_wider(values_from = value) %>% 
-  dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3")) 
-write.csv(dataUncWide25,"pmf_formatted_data/unc_pm25.csv")
-
-
-dataUncWide10 = dataLong %>% 
-  dplyr::filter(name %like% "unc") %>% 
-  dplyr::filter(!FilterSizeType %like% "10") %>% 
-  dplyr::filter(FilterSizeType %like% "10") %>% 
-  pivot_wider(values_from = value) %>% 
-  dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3"))
-write.csv(dataUncWide10,"pmf_formatted_data/unc_pm10.csv")
-
-```
-
