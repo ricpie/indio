@@ -12,11 +12,15 @@ output:
     code_folding: hide
 ---
 
+
+# Script 2 of 3 for Coachella data analysis
 # Load
 
 
 ```{r setup, include=TRUE,echo=TRUE}
 knitr::opts_chunk$set(message = FALSE, warning = FALSE, fig.width = 8, fig.height = 4)
+
+bdlthresh = 60 # percent
 
 graphics.off()
 
@@ -31,7 +35,7 @@ email = 0 #Set to 1 to send out summary qaqc email, else 0
 ```
 
 # Import data
-
+## SampleDate is the file_start_date
 ```{r import_processed, include=TRUE,echo=TRUE}
 
 dataGrav = read_xlsx("~/Dropbox/Coachella Source Apportionment PHI/Data/FilterResultsCombined_MR.xlsx",
@@ -39,7 +43,7 @@ dataGrav = read_xlsx("~/Dropbox/Coachella Source Apportionment PHI/Data/FilterRe
   rename_with(., ~ gsub(" ","",.x)) %>% 
   rename_with(., ~ gsub("[[:punct:]]","",.x)) %>% 
   rename("samplevolm3"="Correctedsamplevolumeweightaccountsformissingfiles") %>% 
-  dplyr::select(SampleDate,FilterSizeType,SampleType,SampleDurationweight,ErrorNotes,samplevolm3,
+  dplyr::select(SampleDate,FilterSizeType,SampleType,SampleDurationweight,samplevolm3,
                 Gravugm3,Gravuncugm3) %>% 
   dplyr::filter(!is.na(Gravugm3))
 
@@ -60,23 +64,40 @@ dataOrganics = read_xlsx("~/Dropbox/Coachella Source Apportionment PHI/Data/Filt
   dplyr::filter(!is.na(SampleDate))
 
 
+#Remove data with bdl data greater than 60%
+dataXRF_bdlpercentage = read_xlsx("~/Dropbox/Coachella Source Apportionment PHI/Data/FilterResultsCombined_MR.xlsx",
+                    sheet = "XRF_Results",skip = 0) %>% 
+  rename_with(., ~ gsub(" ","",.x)) %>% 
+  rename_with(., ~ gsub("/","",.x)) %>%
+  rename_with(., ~ gsub("_","",.x)) %>%
+  dplyr::select(ends_with("ugm3"),-starts_with("...")) %>% 
+  dplyr::filter(row_number()==1) %>% 
+  pivot_longer(cols = 1:22) %>% 
+  dplyr::mutate(value = ifelse(value>bdlthresh/100,NA,value)) %>% 
+  dplyr::filter(!is.na(value)) %>% 
+  dplyr::mutate(name2 = gsub("ugm3","uncugm3",name))
+
 
 dataXRF = read_xlsx("~/Dropbox/Coachella Source Apportionment PHI/Data/FilterResultsCombined_MR.xlsx",
-                    sheet = "XRF_Results",skip = 3,) %>% 
+                    sheet = "XRF_Results",skip = 4,) %>% 
   rename_with(., ~ gsub(" ","",.x)) %>% 
   rename_with(., ~ gsub("/","",.x)) %>%
   rename_with(., ~ gsub("_","",.x)) %>%
   dplyr::select(-starts_with("ugcm"),-"Correctedsamplevolumexrf(accountsformissingfiles)",-"SampleVolumexrf(m^3)",
-                -"Blanksubtractedmassxrf(µg)",-"Sampledurationxrf(hours)",-ErrorNotes,
-                -"BlankMass(µg)",-Element,-Detectionlimit,-FilterType,-FilterID,-SampleType,
-                -ends_with("ugcm2")) %>% 
+                -"Blanksubtractedmassxrf(µg)",-"Sampledurationxrf(hours)",-"Guesses,mustupdate!",
+                -FilterType,-FilterID,-SampleType,-starts_with("..."),
+                -starts_with("Error"),-ends_with("ugcm2")) %>% 
   dplyr::filter(!is.na(SampleDate)) %>% 
   dplyr::mutate(FilterSizeType = as.factor(FilterSizeType)) %>% 
-  dplyr::mutate_each(funs(if(is.character(.)) as.numeric(.) else .))
+  dplyr::mutate_each(funs(if(is.character(.)) as.numeric(.) else .)) %>% 
+  dplyr::select(starts_with("Sample"),starts_with("Filter"),
+                starts_with(dput(as.character(dataXRF_bdlpercentage$name))),
+                starts_with(dput(as.character(dataXRF_bdlpercentage$name2))))
+
 
 
 dataAll = dataGrav  %>% 
-  left_join(dataECOC, by = c("SampleDate","FilterSizeType")) %>% 
+  full_join(dataECOC, by = c("SampleDate","FilterSizeType")) %>% 
   left_join(dataXRF, by = c("SampleDate","FilterSizeType"))
 
 ```
@@ -92,7 +113,7 @@ dataLong = dataAll %>%
 
 
 give.n <- function(x){return(c(y = 0, label = length(x)))}
-give.meanlog <- function(x){return(c(y =mean(x)+.1, label = round(10^(mean(x)),digits=2)))}
+give.meanlog <- function(x){return(c(y =mean(x)+.2, label = round(10^(mean(x)),digits=3)))}
 
 #To make box and whiskers quantiles rather than IQRs.
 f <- function(x) {
@@ -113,7 +134,7 @@ distributions25 <- dataLong %>%
   stat_summary(fun.data = give.n, geom = "text") +
   facet_grid(FilterSizeType ~ .) +
   labs(y=expression("µg/m^3"),x="") + 
-  ggtitle("Species concentration distributions") + 
+  ggtitle("PM2.5 concentration distributions") + 
   # theme_minimal() +
   theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
   theme(legend.title = element_blank()) +
@@ -132,7 +153,7 @@ distributions10 <- dataLong %>%
   stat_summary(fun.data = give.n, geom = "text") +
   facet_grid(FilterSizeType ~ .) +
   labs(y=expression("µg/m^3"),x="") + 
-  ggtitle("Species concentration distributions") + 
+  ggtitle("PM10 concentration distributions") + 
   # theme_minimal() +
   theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
   theme(legend.title = element_blank()) +
@@ -175,21 +196,34 @@ tseries10
 # Save processed data in PMF format
 ```{r save_processed, include=TRUE,echo=TRUE}
 
+
 dataConcWide25 = dataLong %>% 
   dplyr::filter(!name %like% "unc") %>% 
   dplyr::distinct()   %>% 
   dplyr::filter(!FilterSizeType %like% "10") %>% 
   pivot_wider(values_from = value,names_from = c("name")) %>% 
-  dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3"))
-write.csv(dataConcWide25,"pmf_formatted_data/conc_pm25.csv")
+  dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","samplevolm3")) %>% 
+  rename(setNames(names(.), tolower(gsub("ugm3", "", names(.))))) %>% 
+  rename(setNames(names(.), tolower(gsub("conc", "", names(.)))))%>% 
+  dplyr::arrange(sampledate)
+
+
+write.csv(dataConcWide25,paste0("pmf_formatted_data/conc_pm25_",Sys.Date(),".csv"), row.names = FALSE)
+write.csv(dataConcWide25[complete.cases(dataConcWide25),],paste0("pmf_formatted_data/conc_pm25_completecases_",Sys.Date(),".csv"), row.names = FALSE)
+
 
 dataConcWide10 = dataLong %>% 
   dplyr::filter(!name %like% "unc") %>% 
   dplyr::distinct()   %>% 
   dplyr::filter(FilterSizeType %like% "10") %>% 
   pivot_wider(values_from = value) %>% 
-  dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3"))
-write.csv(dataConcWide10,"pmf_formatted_data/conc_pm10.csv")
+  dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","samplevolm3")) %>% 
+  rename(setNames(names(.), tolower(gsub("ugm3", "", names(.))))) %>% 
+  rename(setNames(names(.), tolower(gsub("unc", "", names(.))))) %>% 
+  rename(setNames(names(.), tolower(gsub("conc", "", names(.)))))%>% 
+  dplyr::arrange(sampledate)
+write.csv(dataConcWide10,paste0("pmf_formatted_data/conc_pm10_",Sys.Date(),".csv"), row.names = FALSE)
+write.csv(dataConcWide10[complete.cases(dataConcWide10),],paste0("pmf_formatted_data/conc_pm10_completecases_",Sys.Date(),".csv"), row.names = FALSE)
 
 
 dataUncWide25 = dataLong %>% 
@@ -197,18 +231,25 @@ dataUncWide25 = dataLong %>%
   dplyr::distinct()   %>% 
   dplyr::filter(!FilterSizeType %like% "10") %>% 
   pivot_wider(values_from = value) %>% 
-  dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3")) 
-write.csv(dataUncWide25,"pmf_formatted_data/unc_pm25.csv")
-
+  dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","samplevolm3")) %>% 
+  rename(setNames(names(.), tolower(gsub("ugm3", "", names(.))))) %>% 
+  rename(setNames(names(.), tolower(gsub("unc", "", names(.))))) %>% 
+  rename(setNames(names(.), tolower(gsub("conc", "", names(.))))) %>% 
+  dplyr::arrange(sampledate)
+write.csv(dataUncWide25,paste0("pmf_formatted_data/unc_pm25_",Sys.Date(),".csv"), row.names = FALSE)
+write.csv(dataUncWide25[complete.cases(dataUncWide25),],paste0("pmf_formatted_data/unc_pm25_completecases_",Sys.Date(),".csv"), row.names = FALSE)
 
 dataUncWide10 = dataLong %>% 
   dplyr::filter(name %like% "unc") %>% 
-  dplyr::filter(!FilterSizeType %like% "10") %>% 
   dplyr::filter(FilterSizeType %like% "10") %>% 
   pivot_wider(values_from = value) %>% 
-  dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","ErrorNotes","samplevolm3"))
-write.csv(dataUncWide10,"pmf_formatted_data/unc_pm10.csv")
-
+  dplyr::select(-c("FilterSizeType","SampleType","SampleDurationweight","samplevolm3")) %>% 
+  rename(setNames(names(.), tolower(gsub("ugm3", "", names(.))))) %>% 
+  rename(setNames(names(.), tolower(gsub("unc", "", names(.))))) %>% 
+  rename(setNames(names(.), tolower(gsub("conc", "", names(.)))))%>% 
+  dplyr::arrange(sampledate)
+write.csv(dataUncWide10,paste0("pmf_formatted_data/unc_pm10_",Sys.Date(),".csv"), row.names = FALSE)
+write.csv(dataUncWide10[complete.cases(dataUncWide10),],paste0("pmf_formatted_data/unc_pm10_completecases_",Sys.Date(),".csv"), row.names = FALSE)
 
 
 ```

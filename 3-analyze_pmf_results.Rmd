@@ -1,0 +1,355 @@
+---
+title: "analyze_pmf_results"
+author: "ricardo_piedrahita"
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = paste0(substr(inputFile,1,nchar(inputFile)-4),Sys.Date(),'.html'))})
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: united
+    self_contained: yes
+    code_folding: hide
+---
+
+# Import and analyze selected PMF results
+## Imports meterological and pollution data from SCAQMD
+
+```{r setup, include=TRUE,echo=TRUE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, fig.width = 8, fig.height = 8)
+
+source('r_scripts/load.R')
+source('r_scripts/ASPEN_functions.R')
+`%notlike%` <- Negate(`%like%`)
+
+PM10_solution = "~/Dropbox/Coachella Source Apportionment PHI/Output/5pm10_base.xlsx" #change as needed
+PM25_solution = "~/Dropbox/Coachella Source Apportionment PHI/Output/5t_base.xlsx" #change as needed
+
+```
+
+# Import ASPEN summary data from 1-coachella...rmd so we can get the exact run period, so we can get corresponding met data.
+```{r import_aspen_summary, include=TRUE,echo=TRUE}
+
+aspen_header <- readRDS("../Data/aspen_header.rds")
+
+aspen_header_tseries <- aspen_header %>%
+  dplyr::select(EndDateTimeLocal,StartDateTimeLocal,cartridge_id,file_LogFilename,file_start_date) %>% 
+  rowid_to_column() %>%
+  gather(var,datetime,-cartridge_id,-rowid,-file_LogFilename,-file_start_date) %>%
+  distinct() %>%
+  dplyr::filter(!is.na(datetime)) %>% 
+  dplyr::group_by(rowid)  %>% 
+  tidyr::complete(datetime=seq(min(datetime,na.rm=T), max(datetime,na.rm=T), by = "1 hour")) %>% 
+  fill(cartridge_id,file_LogFilename,file_start_date) %>% 
+  dplyr::ungroup() %>% 
+  select(-var,-rowid) %>% 
+  dplyr::mutate(date = as.Date(datetime),
+                start_hour = as.numeric(format(as.POSIXct(datetime), format = "%H")))
+
+```
+
+
+# Import SCAQMD wind data 
+```{r import_scaqmd_wind, include=TRUE,echo=TRUE}
+
+files_wind = list.files('~/Dropbox/Coachella Source Apportionment PHI/Ambient Data',
+                        pattern = '.csv',
+                        full.names = TRUE) %>% 
+  grep("WIN", x = ., ignore.case = TRUE, value = TRUE) 
+
+
+winddata_raw <- data.table::rbindlist(lapply(files_wind,function(x) utils::read.csv(x,header=TRUE)),fill=TRUE)  %>%
+  dplyr::filter(nchar(as.character(name)) > 1,
+                !is.na(value)) %>%
+  separate("value",c("wd","ws"),sep = "/") %>% 
+  dplyr::mutate(name = gsub(" ","",name),
+                date = as.Date(date),
+                year = format(as.Date(date),"%Y"),
+                month = as.factor(month(date)),
+                year_month = paste0(year,"-",month),
+                units = as.character(units),
+                ws = as.numeric(ws),
+                wd = as.numeric(wd),
+                ws = case_when(units %like% "Miles Per" ~ ws*.447,
+                               TRUE ~ ws),
+                units = case_when(variable %like% 'WINSPD' ~ "m/s",
+                                  TRUE ~ units)) %>%
+  dplyr::distinct() %>% 
+  dplyr::filter(!is.na(ws),
+                !is.na(wd))  
+
+
+winddata_sample <- winddata_raw  %>% 
+  dplyr::full_join(aspen_header_tseries,by = c("date","start_hour")) %>% 
+  dplyr::group_by(file_start_date) %>%
+  dplyr::mutate(V_east = mean(ws*sin(wd * pi/180),na.rm = T),
+                V_north = mean(ws*cos(wd * pi/180),na.rm = T),
+                ws_vectorave  = V_east^2 + V_north^2,
+                wd_vectorave = atan2(V_east,V_north)*180/pi,
+                wd_vectorave = (360+wd_vectorave)/360) %>%
+  dplyr::filter(row_number() == 1)
+
+
+
+####Wind Analysis
+
+#Join wind data with corresponding pollution data to allow us to do pollution roses.
+wide_wind <- 
+  dplyr::left_join(winddata_raw %>% dplyr::select(-ws,-wd),
+                   winddata_raw %>% 
+                     dplyr::filter(variable %like% 'WINSPD') %>%
+                     dplyr::select(date,start_hour,ws,wd,name),
+                   by=c('date','start_hour','name'))
+
+windIndio <- winddata_raw %>% 
+  dplyr::filter(variable %like% 'WINSPD') %>%
+  dplyr::filter(name %like% 'Indio-JacksonStreet')
+windroseIndio <- windRose(windIndio,ws="ws",wd="wd",type = "season",main='Indio-JacksonStreet')
+windroseIndio
+
+#Use this if we import wind data from 65705JohnsonStreet as well.  Not critical
+# windMecca <- winddata_raw %>% 
+#   dplyr::filter(variable %like% 'WINSPD') %>%
+#   dplyr::filter(name %like% 'Mecca-65705JohnsonStreet')
+# windroseMecca <- windRose(windMecca,ws="ws",wd="wd",type = "season",main='Mecca-65705JohnsonStreet',statistic = "prop.count")
+# windMecca
+# 
+# windroseDifferenceMeccaIndio <-windRose(dplyr::left_join(windMecca,windIndio,by = c('date','start_hour')),
+#                                         ws="ws.x",wd="wd.x",ws2 = "ws.y",wd2 = "wd.y",type = "season",main='Mecca-Indio Differences',
+#                                         statistic = "prop.count")
+# windroseDifferenceMeccaIndio
+
+
+
+```
+
+
+# Import SCAQMD ambient air quality data.
+```{r import_scaqmd_pollution, include=TRUE,echo=TRUE}
+
+####PM10 Analysis
+
+files_ambient = list.files('~/Dropbox/Coachella Source Apportionment PHI/Ambient Data',
+                           pattern = '.csv',
+                           full.names = TRUE) %>% 
+  grep("WIN", x = ., ignore.case = TRUE, value = TRUE,invert = T) 
+
+ambdata <- data.table::rbindlist(lapply(files_ambient,function(x) utils::read.csv(x,header=TRUE)),fill=TRUE)  %>%
+  dplyr::filter(nchar(as.character(name)) > 1,
+                !is.na(value)) %>%
+  dplyr::mutate(name = gsub(" ","",name),
+                date = as.POSIXct(date),
+                year = format(as.Date(date),"%Y"),
+                month = as.factor(month(date)),
+                year_month = paste0(year,"-",month),
+                value = as.numeric(value),
+                value = case_when(variable %like% 'OZONE' ~ value * 1000,
+                                  TRUE ~ value),
+                units = as.character(units),
+                units = case_when(variable %like% 'OZONE' ~ "ppb",
+                                  TRUE ~ units)) %>%
+  dplyr::distinct()
+
+pm10_timeseries_plot <-  ambdata %>% 
+  dplyr::filter(variable %like% 'PM10_LHR')  %>% 
+  ggplot(aes(y = value, x = date, color = variable)) +
+  geom_point(alpha = 0.3) + theme_minimal() +  
+  geom_smooth(method = "lm", formula = 'y ~ x',color = 'black') +
+  facet_wrap(~name, scales = "free", ncol = 1) 
+pm10_timeseries_plot
+
+pm10_boxplot <- ambdata %>% 
+  dplyr::filter(variable %like% 'PM10_LHR')  %>% 
+  ggplot(aes(y = value, x = year_month,color = variable)) +
+  geom_boxplot(alpha = 0.3) + theme_minimal() +  
+  # geom_smooth(method = "lm", formula = 'y ~ x',color = 'black') +
+  coord_cartesian(ylim = c(0,200)) +
+  facet_wrap(~name, scales = "free", ncol = 1) 
+pm10_boxplot
+
+pm10_teom_boxplot <- ambdata %>% 
+  dplyr::filter(variable %like% 'PMTEOM')  %>% 
+  ggplot(aes(y = value, x = year_month,color = variable)) +
+  geom_boxplot(alpha = 0.3) + theme_minimal() +  
+  # geom_smooth(method = "lm", formula = 'y ~ x',color = 'black') +
+  coord_cartesian(ylim = c(0,200)) +
+  facet_wrap(~name, scales = "free", ncol = 2) 
+pm10_teom_boxplot
+
+####PM2.5 Analysis
+pm25_timeseries_plot <-  ambdata %>% 
+  dplyr::filter(variable %like% 'PM25HR')  %>% 
+  ggplot(aes(y = value, x = date, color = variable)) +
+  geom_point(alpha = 0.3) + theme_minimal() +  
+  geom_smooth(method = "lm", formula = 'y ~ x',color = 'black') +
+  facet_wrap(~name, scales = "free", ncol = 1) 
+pm25_timeseries_plot
+
+pm25_hrly_boxplot <- ambdata %>% 
+  dplyr::filter(variable %like% 'PM25HR')  %>% 
+  ggplot(aes(y = value, x = year_month,color = variable)) +
+  geom_boxplot(alpha = 0.3) + theme_minimal() +  
+  # geom_smooth(method = "lm", formula = 'y ~ x',color = 'black') +
+  coord_cartesian(ylim = c(0,100)) +
+  facet_wrap(~name, scales = "free", ncol = 1) 
+pm25_hrly_boxplot
+
+pm25_daily_boxplot <- ambdata %>% 
+  dplyr::filter(variable == 'PM25')  %>% 
+  ggplot(aes(y = value, x = year_month,color = variable)) +
+  geom_boxplot(alpha = 0.3) + theme_minimal() +  
+  # geom_smooth(method = "lm", formula = 'y ~ x',color = 'black') +
+  coord_cartesian(ylim = c(0,100)) +
+  facet_wrap(~name, scales = "free", ncol = 2) 
+pm25_hrly_boxplot
+
+
+
+```
+
+
+# SCAQMD wind and pollution plots
+```{r plot_wind, include=TRUE,echo=TRUE}
+
+#### Pollution roses
+
+wide_amb_pm_wind <- pivot_wider(ambdata,names_from = variable, values_from = value) %>% 
+  dplyr::left_join(winddata_raw %>% 
+                     dplyr::select(date,start_hour,name,ws,wd,units),
+                   by = c("date","start_hour","name"))
+
+RoseTEOMIndio25 <- pollutionRose(wide_amb_pm_wind %>% 
+                                 dplyr::filter(name %like% 'Indio',
+                                               !is.na(PMTEOM)),
+                               pollutant = "PMTEOM",type = "season",main='Indio-Jackson Street PM2.5 TEOM')
+RoseTEOMIndio25
+
+RoseIndioPM10 <- pollutionRose(wide_amb_pm_wind %>% 
+                                 dplyr::filter(name %like% 'Indio',
+                                               !is.na(PM10_SHR)),
+                               pollutant = "PM10_SHR",type = "season",
+                               main='Indio-Jackson Street PM10')
+RoseIndioPM10
+
+PercRoseTEOMIndio25 <- percentileRose(wide_amb_pm_wind %>% 
+                                 dplyr::filter(name %like% 'Indio',
+                                               !is.na(PMTEOM)),
+                               pollutant = "PMTEOM",type = "season",smooth = TRUE,
+                               main='Indio-Jackson Street PM2.5 TEOM')
+PercRoseTEOMIndio25
+
+# roseTEOMMecca <- pollutionRose(wide_amb %>% 
+#                                  dplyr::filter(name %like% 'Mecca-65705JohnsonStreet'),
+#                                pollutant = "PMTEOM",type = "season",main='Mecca-65705 Johnson Street PM2.5 TEOM')
+# roseTEOMMecca
+
+#### Windspeed effect on pm
+# windPM10Mecca <- wide_amb %>% 
+#   dplyr::filter(name %like% 'Mecca-65705JohnsonStreet') %>%
+#   ggplot(aes(x = ws,y=PMTEOM)) +
+#   geom_point(alpha = 0.3) + theme_minimal() +  
+#   geom_smooth(method = "loess") +
+#   coord_cartesian(ylim = c(0,100)) +
+#   xlab('Wind speed (m/s)') + 
+#   ylab('PM10 µg/m-3')+
+#   ggtitle('Mecca Johnson Street')
+# windPM10Mecca
+
+windPM25Indio <- wide_amb_pm_wind %>% 
+  dplyr::filter(name %like% 'Indio-JacksonStreet') %>%
+  ggplot(aes(x = ws,y=PMTEOM)) +
+  geom_point(alpha = 0.3) + theme_minimal() +  
+  geom_smooth(method = "loess") +
+  coord_cartesian(ylim = c(0,100)) +
+  xlab('Wind speed (m/s)') + 
+  ylab('PM2.5 µg/m-3') +
+  ggtitle('Indio Jackson Street')
+windPM25Indio
+
+windPM10Indio <- wide_amb_pm_wind %>% 
+  dplyr::filter(name %like% 'Indio-JacksonStreet') %>%
+  ggplot(aes(x = ws,y=PM10_SHR)) +
+  geom_point(alpha = 0.3) + theme_minimal() +  
+  geom_smooth(method = "loess") +
+  coord_cartesian(ylim = c(0,100)) +
+  xlab('Wind speed (m/s)') + 
+  ylab('PM10 µg/m-3') +
+  ggtitle('Indio Jackson Street')
+windPM10Indio
+
+# windPM25Bombay <-  wide_amb_pm_wind %>%
+#   dplyr::filter(name %like% 'BombayBeach',
+#                 variable %like% 'PM25HR')  %>%
+#   dplyr::select(-ws,-wd) %>%
+#   dplyr::left_join(windMecca %>% 
+#                      dplyr::select(date,start_hour,ws,wd),
+#                    by=c('date','start_hour')) %>% 
+#   ggplot(aes(x = ws,y=value)) +
+#   geom_point(alpha = 0.3) + theme_minimal() +  
+#   geom_smooth(method = "loess") +
+#   coord_cartesian(ylim = c(0,100)) +
+#   xlab('Wind speed (m/s)') + 
+#   ylab('PM2.5 µg/m-3') +
+#   ggtitle('Bombay PM2.5')
+# windPM25Bombay
+
+calendarIndio_PM25 <- calendarPlot(wide_amb_pm_wind %>% 
+                                 dplyr::filter(name %like% 'Indio',
+                                               !is.na(PMTEOM)),
+                               pollutant = "PMTEOM",type = "season",main='Indio-Jackson Street PM2.5 TEOM')
+calendarIndio_PM10 <- calendarPlot(wide_amb_pm_wind %>% 
+                                 dplyr::filter(name %like% 'Indio',
+                                               !is.na(PM10_SHR)),
+                               pollutant = "PM10_SHR",type = "season",main='Indio-Jackson Street PM10')
+
+```
+
+# Import and plot PMF result data
+```{r import_pmf, include=TRUE,echo=TRUE}
+
+fact_PMF25 = read_xlsx(PM25_solution,sheet = "Profiles",skip = 3) %>% 
+  clean_names(.) %>% 
+  rename(species=x2) %>% 
+  dplyr::mutate(rownum =row_number()) %>% 
+  dplyr::slice(which(rownum<which(is.na(species))[1])) %>% 
+  dplyr::select(-x1,-rownum)
+
+fact_PMF25_pct = read_xlsx(PM25_solution,sheet = "Profiles",skip = 3) %>% 
+  clean_names(.) %>% 
+  rename(species=x2) %>% 
+  dplyr::mutate(rownum =row_number()) %>% 
+  dplyr::slice(which(rownum>which(factor_1 %like% "Factor 1")[1])) %>% 
+  dplyr::mutate(rownum =row_number()) %>% 
+  dplyr::slice(which(rownum<which(is.na(species))[1])) %>% 
+  dplyr::select(-x1,-rownum)
+
+cont_PMF25 = read_xlsx(PM25_solution,sheet = "Contributions",skip = 3) %>% 
+  clean_names(.) %>% 
+  rename(file_start_date=x2) %>% 
+  dplyr::select(-x1)
+
+
+fact_PMF10 = read_xlsx(PM10_solution,sheet = "Profiles",skip = 3) %>% 
+  clean_names(.) %>% 
+  rename(species=x2) %>% 
+  dplyr::mutate(rownum =row_number()) %>% 
+  dplyr::slice(which(rownum<which(is.na(species))[1])) %>% 
+  dplyr::select(-x1,-rownum)
+
+fact_PMF10_pct = read_xlsx(PM10_solution,sheet = "Profiles",skip = 3) %>% 
+  clean_names(.) %>% 
+  rename(species=x2) %>% 
+  dplyr::mutate(rownum =row_number()) %>% 
+  dplyr::slice(which(rownum>which(factor_1 %like% "Factor 1")[1])) %>% 
+  dplyr::mutate(rownum =row_number()) %>% 
+  dplyr::slice(which(rownum<which(is.na(species))[1])) %>% 
+  dplyr::select(-x1,-rownum)
+
+cont_PMF10 = read_xlsx(PM10_solution,sheet = "Contributions",skip = 3) %>% 
+  clean_names(.) %>% 
+  rename(file_start_date=x2) %>% 
+  dplyr::select(-x1)
+
+```
+
+
